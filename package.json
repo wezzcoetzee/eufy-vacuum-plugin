@@ -1,0 +1,46 @@
+{
+  "name": "homebridge-eufy-clean",
+  "version": "0.1.0",
+  "description": "Homebridge 2.0 Matter platform for Eufy Clean robot vacuums (cloud MQTT control).",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "files": [
+    "dist",
+    "proto",
+    "config.schema.json",
+    "NOTICE"
+  ],
+  "keywords": [
+    "homebridge-plugin"
+  ],
+  "engines": {
+    "node": ">=22.0.0",
+    "homebridge": ">=2.0.0"
+  },
+  "scripts": {
+    "build": "tsc",
+    "watch": "tsc --watch",
+    "lint": "eslint .",
+    "test": "vitest run",
+    "discover": "tsx scripts/discover.ts"
+  },
+  "dependencies": {
+    "mqtt": "5.15.1",
+    "protobufjs": "7.5.4",
+    "zod": "^3.24.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "@types/node": "^22.15.29",
+    "eslint": "^10.6.0",
+    "homebridge": "^2.0.2",
+    "tsx": "^4.23.13",
+    "typescript": "^5.8.3",
+    "typescript-eslint": "^8.63.0",
+    "vitest": "^4.1.10"
+  },
+  "homebridge": {
+    "pluginAlias": "EufyClean",
+    "pluginType": "platform"
+  }
+}

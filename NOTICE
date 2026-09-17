@@ -1,0 +1,19 @@
+homebridge-eufy-clean
+
+This project's Eufy cloud/MQTT protocol understanding is derived from eufy-clean
+by Martijn Poppen (https://github.com/martijnpoppen/eufy-clean), used under the
+terms of its licence, which permits reuse with attribution and requires that
+modifications be marked as such.
+
+- proto/cloud/*.proto are copied unmodified from eufy-clean.
+- src/eufy/ (once implemented) is a rewritten, TypeScript-strict port of
+  eufy-clean's login, MQTT transport and DPS/state decoding logic. It is not a
+  verbatim copy: types, error handling, logging and structure differ
+  substantially from the original, and this constitutes the required marking
+  of modifications.
+- src/eufy/TuyaCloudApi.ts is a trimmed TypeScript port of eufy-clean's
+  TuyaCloudApi and lib/TuyaCloud (request signing, uid login, device list,
+  dp publish), reimplemented on node:crypto without its dependencies.
+
+No code from homebridge-roborock-matter-vacuum (Jake Goldman) is reused;
+it served only as a structural reference for Homebridge 2 Matter integration.

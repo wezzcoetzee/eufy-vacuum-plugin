@@ -1,0 +1,6 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "allowJs": true, "noEmit": true, "rootDir": "." },
+  "include": ["src/**/*.ts", "test/**/*.ts", "scripts/**/*.ts", "eslint.config.mjs", "vitest.config.ts"],
+  "exclude": []
+}

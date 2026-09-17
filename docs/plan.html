@@ -1,0 +1,220 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>homebridge-eufy-clean: implementation plan</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 32px 24px 80px; background: #000; color: #fff; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; max-width: 1080px; margin-inline: auto; }
+  h1 { font-size: 26px; margin: 0 0 6px; }
+  h2 { font-size: 19px; margin: 44px 0 12px; padding-top: 12px; border-top: 1px solid #333; }
+  h3 { font-size: 15px; margin: 22px 0 8px; }
+  p, li { max-width: 78ch; }
+  ul { padding-left: 20px; }
+  code, pre { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+  code { background: #161616; padding: 1px 5px; border-radius: 3px; }
+  pre { background: #0d0d0d; border: 1px solid #262626; padding: 12px 14px; overflow-x: auto; line-height: 1.45; }
+  pre code { background: none; padding: 0; }
+  .scroll { overflow-x: auto; }
+  table { border-collapse: collapse; width: 100%; font-size: 14px; }
+  th, td { text-align: left; vertical-align: top; padding: 7px 10px; border-bottom: 1px solid #262626; }
+  th { color: #bbb; font-weight: 600; }
+  .warn { border-left: 3px solid #ffb400; padding: 8px 14px; margin: 14px 0; background: #0d0d0d; }
+  .muted { color: #9a9a9a; }
+  svg text { font: 13px ui-monospace, Menlo, monospace; fill: #fff; }
+  svg rect { fill: #0d0d0d; stroke: #666; }
+  svg line, svg path { stroke: #888; stroke-width: 1.2; fill: none; }
+  .done { color: #6fcf6f; }
+</style>
+</head>
+<body>
+
+<h1>homebridge-eufy-clean</h1>
+<p class="muted">Implementation plan for exposing the Eufy Clean L60 to Apple Home through Homebridge 2. 2026-09-17.</p>
+
+<h2>1. Two corrections to the earlier discussion</h2>
+
+<div class="warn">
+<strong>The L60 is not T2190.</strong> In eufy-clean's device table T2190 is the RoboVac L70 Hybrid. The L60 family is
+T2267 (L60), T2268 (L60 Hybrid), T2277 (L60 SES) and T2278 (L60 Hybrid SES). "L60 ES" is almost certainly the
+self-empty-station variant, T2277 or T2278. Phase 0 confirms the exact code from the account's device list.
+</div>
+
+<div class="warn">
+<strong>Local Tuya control does not work for the L60.</strong> Every existing RoboVac Homebridge plugin, including the
+maintained hov3rcraft fork, states that the L60 is unsupported because its messages are "encrypted". They are not
+encrypted. They are protobuf blobs, base64-encoded, carried inside Tuya data points (the "novel API"). The only
+working open implementation, eufy-clean, drives these devices over Eufy's own AWS IoT MQTT broker using per-account
+client certificates obtained at login. So the config is <em>email + password</em>, not deviceId + localKey + IP.
+A DHCP reservation is irrelevant. Control goes via Eufy's cloud, but it is push-based, so latency is fine.
+</div>
+
+<p>The rest of the earlier proposal holds. Homebridge 2 has a real Matter API. The Roborock Matter plugin
+(homebridge-roborock-matter-vacuum) uses it to publish a native Robotic Vacuum Cleaner with run mode, clean mode,
+operational state, power source and Service Area, and is a direct template for the HomeKit side.</p>
+
+<h2>2. Architecture</h2>
+
+<div class="scroll">
+<svg width="980" height="250" viewBox="0 0 980 250" role="img" aria-label="Architecture diagram">
+  <rect x="10" y="90" width="130" height="60" rx="3"/><text x="75" y="125" text-anchor="middle">Apple Home</text>
+  <line x1="140" y1="120" x2="190" y2="120"/><text x="165" y="110" text-anchor="middle" style="font-size:11px">Matter</text>
+  <rect x="190" y="90" width="150" height="60" rx="3"/><text x="265" y="118" text-anchor="middle">Homebridge 2</text><text x="265" y="136" text-anchor="middle" style="font-size:11px">Matter enabled</text>
+  <line x1="340" y1="120" x2="390" y2="120"/>
+  <rect x="390" y="20" width="200" height="200" rx="3"/>
+  <text x="490" y="45" text-anchor="middle">homebridge-eufy-clean</text>
+  <rect x="405" y="60" width="170" height="40" rx="3"/><text x="490" y="85" text-anchor="middle">MatterVacuum</text>
+    <rect x="405" y="165" width="170" height="40" rx="3"/><text x="490" y="190" text-anchor="middle">EufyVacuum (state)</text>
+  <line x1="590" y1="185" x2="640" y2="185"/>
+  <rect x="640" y="155" width="150" height="60" rx="3"/><text x="715" y="180" text-anchor="middle">EufyMqttClient</text><text x="715" y="200" text-anchor="middle" style="font-size:11px">protobuf codec</text>
+  <line x1="790" y1="185" x2="840" y2="185"/><text x="815" y="175" text-anchor="middle" style="font-size:11px">mTLS</text>
+  <rect x="840" y="155" width="130" height="60" rx="3"/><text x="905" y="180" text-anchor="middle">Eufy AWS IoT</text><text x="905" y="200" text-anchor="middle" style="font-size:11px">MQTT broker</text>
+  <path d="M905 155 L905 90"/><text x="912" y="125" style="font-size:11px">wifi</text>
+  <rect x="840" y="30" width="130" height="60" rx="3"/><text x="905" y="65" text-anchor="middle">Eufy L60</text>
+  <rect x="640" y="30" width="150" height="60" rx="3"/><text x="715" y="55" text-anchor="middle">EufyCloudApi</text><text x="715" y="75" text-anchor="middle" style="font-size:11px">login, device list, certs</text>
+  <path d="M715 90 L715 155"/>
+</svg>
+</div>
+
+<p>Three layers, each testable alone. The protocol layer knows nothing about Homebridge. The Homebridge layer knows
+nothing about protobuf. <code>EufyVacuum</code> in the middle holds a typed, normalised state object and emits change
+events; the Matter adapter subscribes to it.</p>
+
+<h2>3. Protocol facts (from eufy-clean source)</h2>
+
+<div class="scroll">
+<table>
+<tr><th>Concern</th><th>How it works</th></tr>
+<tr><td>Login</td><td>HTTPS to Eufy's home API with email + password + a random <code>openudid</code>. Returns a session and an MQTT credential bundle: broker endpoint, <code>thing_name</code>, client certificate PEM, private key, <code>user_id</code>, <code>app_name</code>.</td></tr>
+<tr><td>Device list</td><td>Eufy "devicerelation" API, with a fallback that synthesises entries from the cloud device list. Each entry carries <code>device_sn</code>, model code and a current <code>dps</code> snapshot.</td></tr>
+<tr><td>Transport</td><td><code>mqtt://</code> to the AWS IoT endpoint with cert + key. Subscribe <code>cmd/eufy_home/{model}/{sn}/res</code> and <code>smart/mb/in/{sn}</code>. Publish to the <code>/req</code> and <code>smart/mb/out/{sn}</code> counterparts.</td></tr>
+<tr><td>Message envelope</td><td>JSON with a <code>head</code> (client id, cmd 65537, version 1.0.0.1) and a stringified <code>payload</code> containing <code>{ account_id, device_sn, protocol: 2, t, data: { dps... } }</code>.</td></tr>
+<tr><td>Novel DPS map</td><td>152 play/pause (control), 153 work status, 154 clean params, 158 clean speed, 160 find robot, 163 battery, 167 statistics, 168 accessories, 173 go home, 177 error code.</td></tr>
+<tr><td>Commands</td><td>All control is <code>ModeCtrlRequest</code> from <code>control.proto</code>, encoded and written to dp 152: START_AUTO_CLEAN, PAUSE_TASK, RESUME_TASK, STOP_TASK, START_GOHOME, START_SPOT_CLEAN, START_SELECT_ROOMS_CLEAN, START_SCENE_CLEAN.</td></tr>
+<tr><td>State</td><td>dp 153 decodes to <code>WorkStatus</code> (state enum plus mode). dp 177 decodes to <code>ErrorCode</code>. dp 163 is a plain integer. Clean speed lives inside <code>CleanParamResponse</code> on newer firmware, with dp 158 as fallback.</td></tr>
+<tr><td>Rooms</td><td>eufy-clean sends START_SELECT_ROOMS_CLEAN with no room list, so room-targeted cleaning is unproven. <code>control.proto</code> and <code>map_manage.proto</code>/<code>multi_maps.proto</code> exist, so the fields are there to be tried. Scene clean by index is proven and is the fallback for "clean the kitchen".</td></tr>
+</table>
+</div>
+
+<h3>Depend on eufy-clean or vendor it?</h3>
+<p>Recommendation: vendor a lean client. eufy-clean pulls in tuyapi from a git URL, node-rsa, got, is, randomatic and
+logs with bare <code>console.log</code>, and its state layer is untyped. What we actually need is one 340-line login
+file, the MQTT connector, protobufjs, and six .proto files. Its licence is permissive with attribution and a
+requirement to mark modifications, so copy the protos and login logic into <code>src/eufy/</code> with a NOTICE file.
+Homebridge plugin quality depends on clean reconnect and typed state, which is easier to own than to wrap.</p>
+
+<h2>4. Repository layout</h2>
+
+<pre><code>homebridge-eufy-clean/
+├── package.json              homebridge >=2.0, node >=22, keywords: homebridge-plugin
+├── tsconfig.json
+├── config.schema.json        Homebridge UI form
+├── NOTICE                    eufy-clean attribution
+├── scripts/
+│   └── discover.ts           Phase 0: login, list devices, dump + decode dps, send one command
+├── proto/                    control, work_status, clean_param, error_code, map_manage, multi_maps
+└── src/
+    ├── index.ts              registerPlatform
+    ├── platform.ts           config, login, device discovery, accessory registration
+    ├── settings.ts           PLUGIN_NAME, PLATFORM_NAME, schema-derived config type (zod)
+    ├── eufy/
+    │   ├── EufyCloudApi.ts   login, device list, credential refresh
+    │   ├── EufyMqttClient.ts mTLS MQTT, topics, envelope, reconnect
+    │   ├── codec.ts          protobufjs load + typed encode/decode per message
+    │   ├── dps.ts            novel DPS map and raw-to-state mapping
+    │   └── EufyVacuum.ts     typed state, commands, EventEmitter
+    └── accessories/
+        └── MatterVacuum.ts   RoboticVacuumCleaner clusters + handlers
+</code></pre>
+
+<h3>Config</h3>
+<pre><code>{
+  "platform": "EufyClean",
+  "email": "you@example.com",
+  "password": "...",
+  "pollIntervalSeconds": 60,
+  "devices": [
+    {
+      "deviceId": "T2277xxxxxxxxxxxx",
+      "name": "Edo's Vacuum",
+      "rooms": [ { "name": "Kitchen", "roomId": 3 }, { "name": "Living Room", "sceneId": 1 } ],
+    }
+  ]
+}</code></pre>
+<p>Devices are optional. With none listed, the platform exposes every MQTT vacuum on the account. Credentials
+(MQTT certs) are cached under the Homebridge persist directory so restarts do not re-login.</p>
+
+<h2>5. Phases</h2>
+
+<div class="scroll">
+<table>
+<tr><th style="width:9%">Phase</th><th style="width:26%">Deliverable</th><th>Detail</th><th style="width:20%">Done when</th></tr>
+<tr><td>0</td><td><code>scripts/discover.ts</code> run with bun against the real L60</td>
+<td>Login, print model code and whether the device is MQTT + novel API. Dump raw dps. Decode 153 and 177. Subscribe and print live updates. Send START_GOHOME, then RESUME_TASK. Attempt to read the map and room list. Everything later depends on what this prints.</td>
+<td>L60 docks on command. We know the model code, the WorkStatus enum values it emits, and whether room IDs are readable.</td></tr>
+<tr><td>1</td><td><code>src/eufy/</code> client + unit tests</td>
+<td>Port login + MQTT from eufy-clean with proper types, a logger interface instead of console, exponential reconnect, and credential refresh on auth failure. Codec loads protos once. <code>EufyVacuum</code> exposes <code>state</code> (status, battery, charging, error, speed) and commands (start, pause, resume, stop, dock, locate, setSpeed, cleanRooms, cleanScene). Tests cover codec round-trips and dps to state mapping using fixtures captured in Phase 0.</td>
+<td>A 20-line script drives the vacuum through the client. Tests green.</td></tr>
+<tr><td>2</td><td>Homebridge platform + Matter accessory</td>
+<td>Platform logs in, discovers, registers one <code>RoboticVacuumCleaner</code> per device via <code>api.matter.registerPlatformAccessories</code>. Clusters: rvcRunMode (Idle, Cleaning), rvcCleanMode (Quiet, Standard, Turbo, Max), rvcOperationalState (Stopped, Running, Paused, Docked, Charging, Error), powerSource (battery %, charging), identify (find robot). Handlers call <code>EufyVacuum</code>, apply optimistic state, and reconcile on the next MQTT push. Mirror the Roborock plugin's structure.</td>
+<td>Vacuum appears in Apple Home with the native icon. Start, pause, dock, battery and Siri "start the vacuum" work.</td></tr>
+<tr><td>3</td><td>Rooms</td>
+<td>If Phase 0 proved room IDs: Service Area cluster with <code>supportedAreas</code> from the map and <code>selectAreas</code> handler that sends START_SELECT_ROOMS_CLEAN with those IDs. If not: configured rooms map to scene indices and drive START_SCENE_CLEAN.</td>
+<td>Room selection in Apple Home starts the right room. Siri phrase works.</td></tr>
+<tr><td>4</td><td>Hardening + release</td>
+<td>Refuse to start with a clear log line if Matter is not enabled. Stale accessory cleanup. config.schema.json. README with Matter enablement steps. Publish to npm and submit for Homebridge verified plugin listing later.</td>
+<td>Installed on the home server from npm, survives a Homebridge restart and an overnight run.</td></tr>
+</table>
+</div>
+
+<h3>Phase 0 sequence</h3>
+<pre><code>discover.ts        Eufy HTTP API           AWS IoT MQTT              L60
+    │  login(email,pw)   │                        │                    │
+    │───────────────────▶│                        │                    │
+    │  session + certs   │                        │                    │
+    │◀───────────────────│                        │                    │
+    │  device list       │                        │                    │
+    │◀──────────────────▶│                        │                    │
+    │  connect (mTLS), subscribe .../res, smart/mb/in/{sn}             │
+    │────────────────────────────────────────────▶│                    │
+    │  publish dp152 = ModeCtrlRequest{START_GOHOME}                   │
+    │────────────────────────────────────────────▶│───────────────────▶│
+    │                                             │   dps update (153) │
+    │◀────────────────────────────────────────────│◀───────────────────│
+    │  decode WorkStatus → "GOHOME"               │                    │
+</code></pre>
+
+<h2>6. Risks and unknowns</h2>
+<ul>
+  <li><strong>Room-targeted cleaning is unproven.</strong> eufy-clean only sends the bare START_SELECT_ROOMS_CLEAN. If the L60 needs a room list in the request and the map protos do not yield IDs, rooms fall back to scenes created in the Eufy app. Scenes are proven.</li>
+  <li><strong>Cloud dependency.</strong> No internet, no control. Eufy has also broken the MQTT list endpoint before, which is why eufy-clean carries a fallback. We inherit that fragility and should surface it clearly in logs rather than crash.</li>
+  <li><strong>Account region.</strong> Login endpoints differ by region. eufy-clean tries EU then US for Tuya; the MQTT path uses a single domain. Verify in Phase 0.</li>
+  <li><strong>Homebridge 2 Matter API surface.</strong> Documentation is thin. The Roborock plugin is the working reference and is actively maintained against it.</li>
+  <li><strong>Two clients on one account.</strong> Running the plugin and the Eufy phone app at once is fine; eufy-clean and Home Assistant users do it. The plugin uses a distinct <code>openudid</code>.</li>
+</ul>
+
+<h2>7. Questions to settle before Phase 0</h2>
+<ul>
+  <li class="done">Server: Node LTS, no Homebridge yet. Decision: fresh Homebridge 2, plugin on a child bridge with Matter enabled. No HAP fallback.</li>
+  <li>Are rooms already named and a couple of scenes defined in the Eufy app? Phase 0 uses them to test room and scene cleaning.</li>
+</ul>
+
+<h2>8. Tooling</h2>
+<ul>
+  <li>Bun for scripts and tests, tsc for the published build (Homebridge loads CommonJS from <code>dist/</code>).</li>
+  <li>Zod schema for config, with the TypeScript type inferred from it.</li>
+  <li>protobufjs with the .proto files loaded at runtime (same approach as eufy-clean) rather than generated static code. Keeps the codec small and the protos editable during discovery.</li>
+  <li>Vitest for codec and state-mapping tests using captured fixtures. No tests for Homebridge wiring.</li>
+</ul>
+
+<h2>References</h2>
+<ul>
+  <li>github.com/martijnpoppen/eufy-clean: protocol source (Login.ts, MqttConnect.ts, SharedConnect.ts, Base.ts, proto/cloud/*)</li>
+  <li>github.com/jakemgold/homebridge-roborock-matter-vacuum: Homebridge 2 Matter RVC template (matterVacuum.ts, platform.ts)</li>
+  <li>github.com/hov3rcraft/homebridge-eufy-robovac: Tuya-local HAP plugin, documents L60 as unsupported</li>
+</ul>
+
+</body>
+</html>
