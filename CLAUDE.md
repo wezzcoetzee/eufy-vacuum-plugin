@@ -18,6 +18,7 @@ src/
     TuyaCloudTransport.ts   polling VacuumTransport for Tuya-connected (connect_type 2) vacuums
     codec.ts                protobufjs load + typed encode/decode
     dps.ts                  novel DPS map, raw dps -> VacuumState projection
+    errors.ts               Eufy error code descriptions (from eufy-clean)
     EufyVacuum.ts           VacuumController implementation (state + commands)
     __tests__/              vitest specs + fixtures
   accessories/

@@ -1,4 +1,5 @@
 import { createCipheriv, createHash, createHmac, randomBytes, randomUUID } from 'node:crypto';
+import { getDefaultAutoSelectFamilyAttemptTimeout, setDefaultAutoSelectFamilyAttemptTimeout } from 'node:net';
 
 import type { DpsValue, Logger } from './types';
 
@@ -12,6 +13,14 @@ const HMAC_KEY = 'A_cepev5pfnhua4dkqkdpmnrdxx378mpjr_s8x78u7xwymasd9kqa7a73pjhxq
 /** Fixed AES key/iv the app uses to derive the uid "password". */
 const UID_AES_KEY = Buffer.from([36, 78, 109, 138, 86, 172, 135, 145, 36, 67, 45, 139, 108, 188, 162, 196]);
 const UID_AES_IV = Buffer.from([119, 36, 86, 242, 167, 102, 76, 243, 57, 44, 53, 151, 233, 62, 87, 71]);
+
+/**
+ * Node's Happy Eyeballs gives each resolved address only 250ms to connect.
+ * Tuya's hosts publish IPv6 addresses many networks cannot reach, and sit
+ * far from much of the world, so every attempt can time out and fetch fails
+ * even though curl connects fine. Process-wide, so only ever raised.
+ */
+const CONNECT_ATTEMPT_TIMEOUT_MS = 2_000;
 
 export const TUYA_REGIONS = {
   EU: 'https://a1.tuyaeu.com/api.json',
@@ -111,6 +120,10 @@ export class TuyaCloudApi {
 
   /** Logs in on the first region that accepts the account (EU, then US). */
   static async connect(eufyUserId: string, log: Logger): Promise<TuyaCloudApi> {
+    if (getDefaultAutoSelectFamilyAttemptTimeout() < CONNECT_ATTEMPT_TIMEOUT_MS) {
+      setDefaultAutoSelectFamilyAttemptTimeout(CONNECT_ATTEMPT_TIMEOUT_MS);
+    }
+
     const failures: string[] = [];
     for (const region of Object.keys(TUYA_REGIONS) as TuyaRegion[]) {
       const api = new TuyaCloudApi(eufyUserId, region, log);

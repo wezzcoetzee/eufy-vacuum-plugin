@@ -1,5 +1,6 @@
 import type { API, Logging, MatterAccessory } from 'homebridge';
 
+import { describeEufyError } from '../eufy/errors';
 import type { CleanSpeed, VacuumController, VacuumState } from '../eufy/types';
 import type { DeviceConfig, RoomTarget } from '../settings';
 import { PLUGIN_NAME } from '../settings';
@@ -35,7 +36,33 @@ const RVC_OPERATIONAL_STATES = {
 const RVC_ERROR_STATES = {
   NoError: 0,
   UnableToCompleteOperation: 2,
+  FailedToFindChargingDock: 64,
+  Stuck: 65,
+  DustBinMissing: 66,
+  WaterTankEmpty: 68,
+  WaterTankMissing: 69,
+  MopCleaningPadMissing: 71,
 } as const;
+
+/** Eufy error codes (see src/eufy/errors.ts) that have a specific Matter error state. */
+const MATTER_ERROR_BY_EUFY_CODE: Readonly<Record<number, number>> = {
+  1: RVC_ERROR_STATES.Stuck,
+  2: RVC_ERROR_STATES.Stuck,
+  3: RVC_ERROR_STATES.Stuck,
+  4: RVC_ERROR_STATES.Stuck,
+  5: RVC_ERROR_STATES.Stuck,
+  6: RVC_ERROR_STATES.Stuck,
+  7: RVC_ERROR_STATES.Stuck,
+  13: RVC_ERROR_STATES.Stuck,
+  14: RVC_ERROR_STATES.DustBinMissing,
+  21: RVC_ERROR_STATES.FailedToFindChargingDock,
+  40: RVC_ERROR_STATES.MopCleaningPadMissing,
+  52: RVC_ERROR_STATES.Stuck,
+  55: RVC_ERROR_STATES.FailedToFindChargingDock,
+  72: RVC_ERROR_STATES.WaterTankEmpty,
+  74: RVC_ERROR_STATES.WaterTankEmpty,
+  75: RVC_ERROR_STATES.WaterTankMissing,
+};
 
 const POWER_SOURCE_STATUS_ACTIVE = 1;
 
@@ -396,8 +423,8 @@ function toOperationalError(state: VacuumState): { errorStateId: number; errorSt
   }
 
   return {
-    errorStateId: RVC_ERROR_STATES.UnableToCompleteOperation,
-    errorStateDetails: `Eufy reported error code ${state.errorCode}.`,
+    errorStateId: MATTER_ERROR_BY_EUFY_CODE[state.errorCode] ?? RVC_ERROR_STATES.UnableToCompleteOperation,
+    errorStateDetails: describeEufyError(state.errorCode),
   };
 }
 

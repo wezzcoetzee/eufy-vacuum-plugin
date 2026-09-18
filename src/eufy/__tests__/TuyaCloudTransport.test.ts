@@ -1,7 +1,12 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TuyaDevice } from '../TuyaCloudApi';
-import { COMMAND_REFRESH_DELAY_MS, TuyaCloudTransport } from '../TuyaCloudTransport';
+import {
+  ACTIVE_POLL_INTERVAL_MS,
+  COMMAND_REFRESH_DELAY_MS,
+  POLL_FAILURE_WARN_THRESHOLD,
+  TuyaCloudTransport,
+} from '../TuyaCloudTransport';
 import { TUYA_CAPTURE } from './fixtures/dps';
 
 const log = { debug: vi.fn(), info: vi.fn(), warn: vi.fn(), error: vi.fn() };
@@ -18,7 +23,10 @@ function createTransport(devices: () => TuyaDevice[]) {
 }
 
 describe('TuyaCloudTransport', () => {
-  beforeEach(() => vi.useFakeTimers());
+  beforeEach(() => {
+    vi.useFakeTimers();
+    vi.clearAllMocks();
+  });
   afterEach(() => vi.useRealTimers());
 
   it('reads state on connect and on every poll', async () => {
@@ -60,5 +68,37 @@ describe('TuyaCloudTransport', () => {
     expect(api.listDevices).toHaveBeenCalledTimes(2);
     expect(received).toEqual([]);
     expect(log.warn).toHaveBeenCalledWith('Tuya cloud no longer lists device dev-1');
+  });
+
+  it('polls faster while the vacuum is moving and slows down once it docks', async () => {
+    let dps: Record<string, unknown> = TUYA_CAPTURE.goHome;
+    const { api, transport } = createTransport(() => [{ devId: 'dev-1', dps }]);
+
+    await transport.connect();
+    await vi.advanceTimersByTimeAsync(ACTIVE_POLL_INTERVAL_MS);
+    expect(api.listDevices).toHaveBeenCalledTimes(2);
+
+    dps = TUYA_CAPTURE.chargingDone;
+    await vi.advanceTimersByTimeAsync(ACTIVE_POLL_INTERVAL_MS);
+    expect(api.listDevices).toHaveBeenCalledTimes(3);
+
+    await vi.advanceTimersByTimeAsync(ACTIVE_POLL_INTERVAL_MS);
+    expect(api.listDevices).toHaveBeenCalledTimes(3);
+    await transport.disconnect();
+  });
+
+  it('warns once after repeated failed polls and notes the recovery', async () => {
+    const { api, transport } = createTransport(() => [{ devId: 'dev-1', dps: TUYA_CAPTURE.chargingDone }]);
+    for (let i = 0; i < POLL_FAILURE_WARN_THRESHOLD + 1; i++) {
+      api.listDevices.mockRejectedValueOnce(new Error('fetch failed'));
+    }
+
+    await transport.connect();
+    await vi.advanceTimersByTimeAsync(60_000 * (POLL_FAILURE_WARN_THRESHOLD + 1));
+
+    expect(log.warn).toHaveBeenCalledTimes(1);
+    expect(log.warn).toHaveBeenCalledWith(expect.stringContaining('fetch failed'));
+    expect(log.info).toHaveBeenCalledWith('Tuya state polls for dev-1 are working again');
+    await transport.disconnect();
   });
 });
