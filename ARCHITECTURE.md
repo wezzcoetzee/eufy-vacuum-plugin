@@ -74,8 +74,14 @@ flowchart TD
   Tuya device exists. An expired session (`*SESSION*` error code) triggers
   one re-login and retry.
 - `TuyaCloudTransport` reads state by listing the account's Tuya devices every
-  `pollIntervalSeconds`, and re-reads 3s after each command so Apple Home
-  catches up without waiting a full poll.
+  `pollIntervalSeconds` (every 10s while the vacuum is cleaning or heading
+  home, so docking shows up quickly), and re-reads 3s after each command so
+  Apple Home catches up without waiting a full poll. Three failed polls in a
+  row log a warning, since Home keeps showing stale state until they recover.
+- `TuyaCloudApi.connect` raises Node's per-address connect timeout (Happy
+  Eyeballs, 250ms by default) to 2s: Tuya's EU hosts advertise IPv6 that many
+  networks can't reach, and from far away every IPv4 attempt timed out too,
+  so `fetch` failed while curl worked.
 - Signing and login are pinned by known-answer tests generated from
   eufy-clean's own implementation (`__tests__/TuyaCloudApi.test.ts`).
 
@@ -128,7 +134,7 @@ A poll (`EufyCleanPlatform.startPolling`, default every
 push-only: a vacuum that never changes state never pushes an update, and the
 poll is what keeps a long-idle vacuum's battery/status from going stale.
 Tuya-connected vacuums get no pushes at all; `TuyaCloudTransport` polls on
-the same interval and hands dps to `onDps`, so the rest of this flow is
+the same interval (faster while the vacuum is moving) and hands dps to `onDps`, so the rest of this flow is
 unchanged from `EufyVacuum` onward.
 
 ## DPS table
@@ -165,6 +171,9 @@ Defined in the vendored `.proto` files under `proto/cloud/` and typed in
 - **`ErrorCode`** (`error_code.proto`) — decoded from dp 177. `error` is
   treated as a real fault; `warn` (e.g. "clean the dust collector") is
   intentionally ignored so it never surfaces as a HomeKit error state.
+  `src/eufy/errors.ts` describes each code; `MatterVacuum` maps the common
+  ones (stuck, dust bin, dock, water tank) to Matter's specific error states
+  and everything else to `UnableToCompleteOperation`.
 - **`CleanParamRequest` / `CleanParamResponse`** (`clean_param.proto`) —
   decoded from dp 154. `fan.suction` inside `runningCleanParam` /
   `cleanParam` / `areaCleanParam` (checked in that order) is the primary

@@ -14,6 +14,9 @@ modifications be marked as such.
 - src/eufy/TuyaCloudApi.ts is a trimmed TypeScript port of eufy-clean's
   TuyaCloudApi and lib/TuyaCloud (request signing, uid login, device list,
   dp publish), reimplemented on node:crypto without its dependencies.
+- src/eufy/errors.ts takes its error codes from eufy-clean's
+  EUFY_CLEAN_ERROR_CODES, trimmed to the top-level codes and with the
+  descriptions reworded.
 
 No code from homebridge-roborock-matter-vacuum (Jake Goldman) is reused;
 it served only as a structural reference for Homebridge 2 Matter integration.

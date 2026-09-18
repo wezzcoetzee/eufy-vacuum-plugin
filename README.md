@@ -23,7 +23,8 @@ model can be on either:
 - **Tuya cloud**: vacuums Eufy onboarded through Tuya (`connect_type: 2` in
   Eufy's device list, for example some L60 SES units). The plugin logs in to
   Tuya's mobile API with your Eufy account, no separate Tuya account needed.
-  Commands are immediate; state is polled every `pollIntervalSeconds`.
+  Commands are immediate; state is polled every `pollIntervalSeconds`, and
+  every 10s while the vacuum is cleaning or returning to the dock.
 
 The plugin picks the right one per device automatically. Both need an Eufy
 account and internet access; there is no LAN-only mode for these models.
@@ -104,7 +105,7 @@ Apple Home without touching the rest of your setup.
 | `name` | no | Display name for the platform in Homebridge logs. |
 | `email` | yes | Eufy account email. |
 | `password` | yes | Eufy account password. |
-| `pollIntervalSeconds` | no (default `60`, minimum `10`) | How often the plugin re-reads vacuum state. For MQTT vacuums this keeps an idle vacuum's battery and status fresh; for Tuya-connected vacuums it is how state updates arrive at all, so it bounds how stale Apple Home can be (commands still apply immediately). |
+| `pollIntervalSeconds` | no (default `60`, minimum `10`) | How often the plugin re-reads vacuum state. For MQTT vacuums this keeps an idle vacuum's battery and status fresh; for Tuya-connected vacuums it is how state updates arrive at all, so it bounds how stale Apple Home can be while idle (commands still apply immediately, and state is re-read every 10s while the vacuum is moving). |
 | `devices` | no | Explicit list of vacuums to publish. If omitted, every vacuum on the account is published. |
 | `devices[].deviceId` | yes (if `devices` is set) | The device's `device_sn`, e.g. `T2277XXXXXXXXXXXX`. See Phase 0 discovery below to find it. |
 | `devices[].name` | yes (if `devices` is set) | Name shown in Apple Home. |
@@ -122,7 +123,9 @@ Apple Home without touching the rest of your setup.
 ### What appears in Home
 
 - A **Robot Vacuum** tile with start/stop and status (cleaning, idle,
-  charging, docked, returning to dock, error).
+  charging, docked, returning to dock, error). Common faults show as a
+  specific error (stuck, dust bin missing, can't find the dock) with Eufy's
+  description.
 - **Clean modes** Quiet, Standard, Turbo, Max, mapped from the vacuum's fan
   speed.
 - **Battery level** and charging state.
